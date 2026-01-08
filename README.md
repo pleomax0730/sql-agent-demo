@@ -399,54 +399,81 @@ def get_database_schema() -> dict:
 
 ---
 
+## 多使用者與上下文管理 (Advanced)
+
+本專案支援多使用者環境下的身份識別與上下文管理，確保開發者可以追蹤每個請求的來源與狀態。
+
+### 1. 認證與身份識別 (`auth.py`)
+
+透過 LangGraph 的認證掛鉤，我們可以在請求進入 Agent 之前攔截並分配身份。
+
+```python
+from langgraph_sdk import Auth
+
+auth = Auth()
+
+@auth.authenticate
+async def get_user(headers: dict):
+    # 從 Header 取得或產生隨機 User ID
+    user_id = headers.get("x-user-id", f"user-{uuid.uuid4().hex[:8]}")
+    return {"identity": user_id}
+```
+
+### 2. 使用 `ToolRuntime` 獲取執行資訊
+
+在工具 (Tool) 中，我們可以透過注入 `ToolRuntime` 參數來獲取當前的執行上下文，包括 **Thread ID**、**Run ID** 以及 **User ID**。
+
+**範例：在工具中讀取 ID**
+```python
+@tool
+def query_data(raw_sql: str, runtime: ToolRuntime):
+    # 獲取 Thread ID (對話 ID)
+    thread_id = runtime.config["configurable"].get("thread_id")
+    # 獲取 User ID (由 auth.py 提供)
+    user_id = runtime.config["configurable"]["langgraph_auth_user"]["identity"]
+    # 獲取 Run ID (本次執行的唯一 ID)
+    run_id = runtime.config["run_id"]
+    
+    print(f"User {user_id} 在 Thread {thread_id} 執行了查詢")
+```
+
+### 3. 重要特性：模型不可見性 (Invisibility)
+
+> 💡 **關鍵說明**：在工具函數名中定義的 `runtime: ToolRuntime` 或 `config: RunnableConfig` 參數，**對模型 (LLM) 是完全不可見的**。
+
+- **運作機制**：LangChain 在將工具定義轉換為 JSON Schema 提供給 LLM 時，會自動過濾掉這些型別為 `ToolRuntime` 或 `RunnableConfig` 的參數。
+- **優點**：LLM 永遠不會嘗試去「填充」這些資訊。Agent 會以為該工具只需要 `raw_sql` 參數，而系統會在執行階段自動將正確的對象注入進去。這保證了系統資訊的安全與簡潔。
+
+---
+
 ## 工具 (Tool) 設計說明
+
+本專案採用 **探索式 (Discovery Pattern)** 工具設計，讓 Agent 在執行時動態發現資料庫結構，而非在啟動時寫死。
 
 ### 工具定義 (`tools/sql_tool.py`)
 
-使用 LangChain 的 `@tool` 裝飾器來定義工具：
-
-```python
-from langchain_core.tools import tool
-
-@tool
-def execute_sql(raw_sql: str) -> str:
-    """
-    Execute a raw SQL query against the laptop inventory database.
-    
-    Args:
-        raw_sql: The complete SQL query to execute.
-    """
-    # 連接 SQLite 並執行查詢
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(raw_sql)
-    
-    # 格式化輸出結果
-    # ...
-```
+1.  **`list_tables`**：列出資料庫中的所有資料表及其 Schema。
+2.  **`query_data`**：執行 SQL 查詢並獲取結果。
 
 ### 工具設計原則
 
 | 原則 | 說明 |
-|------|------|
-| **單一職責** | 一個工具只做一件事 (執行 SQL) |
-| **清晰的 Docstring** | LLM 會讀取 docstring 來理解工具用途 |
-| **明確的參數** | `raw_sql: str` 讓 LLM 知道要傳入完整 SQL |
-| **友善的輸出格式** | 使用表格格式與 emoji 增加可讀性 |
+| :--- | :--- |
+| **動態發現** | 透過 `list_tables` 獲取結構，解決資料表過多或權限變動的問題。 |
+| **JSON 回傳格式** | **關鍵設計**：工具回傳原始的 `list` 或 `dict` (JSON 格式)，而非格式化字串。 |
+| **UI 自動渲染** | 由於回傳的是 JSON，`agent-chat-ui` 會自動將其轉換為互動式 HTML 表格。 |
+| **錯誤顯示** | 使用 `traceback.print_exc()` 確保後端終端機能看到詳細錯誤日誌。 |
 
-### 輸出格式範例
+### 輸出範例 (JSON 邏輯)
 
+當 `query_data` 被呼叫時，它回傳如下格式：
+```json
+[
+  {"brand": "Apple", "model_name": "MacBook Pro 14"},
+  {"brand": "Dell", "model_name": "XPS 13"}
+]
 ```
-✅ Query executed successfully!
-
-📊 Results (5 rows):
-
-model_name         | serial_number
--------------------+-----------------
-MacBook Pro 14     | SN-APL-MBP14-001
-MacBook Air M2     | SN-APL-MBA13-002
-...
-```
+`agent-chat-ui` 接收到此 JSON 後，會在網頁上渲染出漂亮的資料表格，支援自動對齊與溢出捲動。
 
 ---
 

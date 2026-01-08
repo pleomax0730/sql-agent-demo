@@ -7,6 +7,10 @@
 ## 📋 目錄
 
 - [專案架構](#專案架構)
+- [設定檔說明](#設定檔說明)
+  - [langgraph.json](#1-langgraphjson---langgraph-server-設定)
+  - [.env (根目錄)](#2-env-根目錄---langgraph-server-環境變數)
+  - [agent-chat-ui .env](#3-agent-chat-uiappswebenv---chat-ui-設定)
 - [環境需求](#環境需求)
 - [快速開始](#快速開始)
   - [1. 安裝 Python 環境 (uv)](#1-安裝-python-環境-uv)
@@ -48,6 +52,101 @@ sql-agent/
 └── agent-chat-ui/        # Web 聊天介面 (Next.js)
     └── apps/web/
         └── .env          # UI 連線設定
+```
+
+---
+
+## 設定檔說明
+
+本專案有三個重要的設定檔需要了解：
+
+### 1. `langgraph.json` - LangGraph Server 設定
+
+這是 LangGraph 開發伺服器的核心設定檔：
+
+```json
+{
+  "$schema": "https://langchain-ai.github.io/langgraph/langgraph-schema.json",
+  "graphs": {
+    "agent": "./graph.py:graph"
+  },
+  "env": ".env",
+  "python_version": "3.13",
+  "dependencies": ["."]
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `$schema` | JSON Schema 規格網址，讓 IDE 提供自動補全與語法檢查 (固定值，勿修改) |
+| `graphs` | **Graph 映射表**。Key 是 Assistant ID (如 `agent`)，Value 是 `檔案路徑:變數名` |
+| `env` | 環境變數檔案路徑 |
+| `python_version` | Python 版本要求 |
+| `dependencies` | Python 套件依賴路徑 (`.` 表示當前目錄的 `pyproject.toml`) |
+
+> 💡 **重點**：`graphs` 欄位的 **Key** (如 `agent`) 就是 Chat UI 中 `NEXT_PUBLIC_ASSISTANT_ID` 要填的值。
+
+---
+
+### 2. `.env` (根目錄) - LangGraph Server 環境變數
+
+位置：`sql-agent/.env`
+
+```bash
+# LangSmith API Key (可選，用於追蹤)
+# LANGSMITH_API_KEY=lsv2_...
+
+# OpenAI API 設定 (連接本地 llama.cpp)
+OPENAI_API_BASE=http://localhost:8080/v1
+OPENAI_API_KEY=EMPTY
+```
+
+| 變數 | 必填 | 說明 |
+|------|------|------|
+| `LANGSMITH_API_KEY` | 否 | LangSmith 追蹤用，本地開發可省略 |
+| `OPENAI_API_BASE` | 否 | 如果你在 `graph.py` 中已hardcode，這裡可省略 |
+| `OPENAI_API_KEY` | 否 | 本地 llama.cpp 填 `EMPTY` 即可 |
+
+---
+
+### 3. `agent-chat-ui/apps/web/.env` - Chat UI 設定
+
+位置：`sql-agent/agent-chat-ui/apps/web/.env`
+
+```bash
+# LangGraph Server 的連線地址 (預設本地開發為 2024 埠)
+NEXT_PUBLIC_API_URL=http://localhost:2024
+
+# 對應 langgraph.json 中 graphs 欄位定義的 Key
+NEXT_PUBLIC_ASSISTANT_ID=agent
+```
+
+| 變數 | 必填 | 說明 |
+|------|------|------|
+| `NEXT_PUBLIC_API_URL` | ✅ | LangGraph Server 的 API 位址 |
+| `NEXT_PUBLIC_ASSISTANT_ID` | ✅ | 必須與 `langgraph.json` 中 `graphs` 的 Key 一致 |
+
+> ⚠️ **注意**：`NEXT_PUBLIC_` 開頭的變數會暴露給前端，請勿放置敏感資訊。
+
+---
+
+### 設定檔關聯圖
+
+```
+langgraph.json                     agent-chat-ui/apps/web/.env
+┌─────────────────────┐            ┌─────────────────────────────┐
+│ graphs:             │            │ NEXT_PUBLIC_ASSISTANT_ID=   │
+│   "agent": ...      │◄───────────│   agent                     │
+└─────────────────────┘            └─────────────────────────────┘
+         ▲                                      │
+         │                                      │
+         │ 讀取                                  │ 連線
+         │                                      ▼
+┌─────────────────────┐            ┌─────────────────────────────┐
+│ LangGraph Server    │◄───────────│ NEXT_PUBLIC_API_URL=        │
+│ http://localhost:   │            │   http://localhost:2024     │
+│ 2024                │            └─────────────────────────────┘
+└─────────────────────┘
 ```
 
 ---
@@ -405,9 +504,3 @@ llm = ChatOpenAI(
     model="your-model-name",               # 更改模型名稱
 )
 ```
-
----
-
-## 授權
-
-MIT License

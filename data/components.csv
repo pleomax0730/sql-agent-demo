@@ -1,0 +1,10 @@
+id,name,type,manufacturer,specs
+1,Apple M3 Pro,CPU,Apple,11-core CPU / 14-core GPU
+2,Apple M2,CPU,Apple,8-core CPU / 8-core GPU
+3,Intel Core i7-1355U,CPU,Intel,10-core up to 5.0 GHz
+4,Intel Core i5-1335U,CPU,Intel,10-core up to 4.6 GHz
+5,Crucial 16GB LPDDR5,RAM,Micron,6400 MT/s
+6,Samsung 32GB LPDDR5,RAM,Samsung,5600 MT/s
+7,Samsung 980 Pro 512GB,SSD,Samsung,NVMe Gen4
+8,Western Digital 1TB SN850,SSD,WD,NVMe Gen4
+9,NVIDIA RTX 4050 Mobile,GPU,NVIDIA,6GB GDDR6

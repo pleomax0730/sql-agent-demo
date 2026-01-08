@@ -1,0 +1,413 @@
+# 🗃️ SQL Agent - 筆記型電腦零件庫存查詢助手
+
+一個基於 **LangChain** 和 **LangGraph** 的 SQL 智能代理，透過自然語言對話來查詢 SQLite 資料庫。本專案配備完整的 Web 聊天介面 (`agent-chat-ui`)，讓使用者能夠輕鬆與資料庫互動。
+
+---
+
+## 📋 目錄
+
+- [專案架構](#專案架構)
+- [環境需求](#環境需求)
+- [快速開始](#快速開始)
+  - [1. 安裝 Python 環境 (uv)](#1-安裝-python-環境-uv)
+  - [2. 初始化資料庫](#2-初始化資料庫)
+  - [3. 啟動 LangGraph Server](#3-啟動-langgraph-server)
+  - [4. 安裝並啟動 Agent Chat UI](#4-安裝並啟動-agent-chat-ui)
+- [Agent 設計說明](#agent-設計說明)
+- [Prompt 設計說明](#prompt-設計說明)
+- [工具 (Tool) 設計說明](#工具-tool-設計說明)
+- [測試資料說明](#測試資料說明)
+- [常見問題](#常見問題)
+
+---
+
+## 專案架構
+
+```
+sql-agent/
+├── graph.py              # LangGraph Agent 定義 (主入口)
+├── langgraph.json        # LangGraph Server 設定檔
+├── init_db.py            # 資料庫初始化腳本
+├── inventory.db          # SQLite 資料庫檔案
+├── pyproject.toml        # Python 專案設定 (uv 管理)
+├── .env                  # 環境變數
+│
+├── db/                   # 資料庫模組
+│   ├── __init__.py
+│   └── schema.py         # 動態 Schema 讀取與格式化
+│
+├── tools/                # LangChain 工具模組
+│   ├── __init__.py
+│   └── sql_tool.py       # SQL 執行工具
+│
+├── data/                 # 測試用 CSV 資料
+│   ├── laptops.csv
+│   ├── components.csv
+│   └── laptop_components.csv
+│
+└── agent-chat-ui/        # Web 聊天介面 (Next.js)
+    └── apps/web/
+        └── .env          # UI 連線設定
+```
+
+---
+
+## 環境需求
+
+| 工具 | 版本 | 用途 |
+|------|------|------|
+| Python | 3.13+ | 執行 Agent |
+| [uv](https://docs.astral.sh/uv/) | 最新版 | Python 套件管理 |
+| Node.js | 18+ | 執行 Chat UI |
+| npm | 9+ | 前端套件管理 |
+| llama.cpp Server | - | 本地 LLM 推論 (預設 8080 埠) |
+
+---
+
+## 快速開始
+
+### 1. 安裝 Python 環境 (uv)
+
+首先確保已安裝 [uv](https://docs.astral.sh/uv/getting-started/installation/)：
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+進入專案目錄並安裝 Python 依賴：
+
+```powershell
+cd sql-agent
+
+# uv 會自動建立虛擬環境並安裝所有依賴
+uv sync
+```
+
+### 2. 初始化資料庫
+
+執行初始化腳本，將 CSV 資料匯入 SQLite：
+
+```powershell
+uv run init_db.py
+```
+
+成功後會看到：
+
+```
+Initializing database at ...\inventory.db...
+Loading laptops.csv into table 'laptops'...
+Loading components.csv into table 'components'...
+Loading laptop_components.csv into table 'laptop_components'...
+Database initialization complete.
+```
+
+### 3. 啟動 LangGraph Server
+
+> ⚠️ **前提條件**：請確保你的本地 LLM 伺服器 (如 llama.cpp) 已在 `http://localhost:8080` 運行。
+
+啟動 LangGraph 開發伺服器：
+
+```powershell
+uv run langgraph dev --no-browser
+```
+
+成功後會看到：
+
+```
+╦  ┌─┐┌┐┌┌─┐╔═╗┬─┐┌─┐┌─┐┬ ┬
+║  ├─┤││││ ┬║ ╦├┬┘├─┤├─┘├─┤
+╩═╝┴ ┴┘└┘└─┘╚═╝┴└─┴ ┴┴  ┴ ┴
+
+- 🚀 API: http://127.0.0.1:2024
+- 📚 API Docs: http://127.0.0.1:2024/docs
+```
+
+### 4. 安裝並啟動 Agent Chat UI
+
+開啟新的終端機視窗，進入 Chat UI 目錄：
+
+```powershell
+cd agent-chat-ui/apps/web
+
+# 安裝前端依賴
+npm install
+
+# 啟動開發伺服器
+npm run dev
+```
+
+成功後會看到：
+
+```
+▲ Next.js 15.x.x
+- Local: http://localhost:3000
+```
+
+現在打開瀏覽器訪問 **http://localhost:3000** 即可開始對話！
+
+---
+
+## Agent 設計說明
+
+### 核心概念
+
+本專案使用 LangChain 最新的 `create_agent` 函數來建立 Agent。這是基於 **LangGraph** 的現代化方法，提供更靈活的控制流程。
+
+### 程式碼解析 (`graph.py`)
+
+```python
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
+def create_sql_agent():
+    # 1. 初始化 LLM (連接本地 llama.cpp)
+    llm = ChatOpenAI(
+        base_url="http://localhost:8080/v1",
+        api_key="EMPTY",
+        model="qwen",
+    )
+
+    # 2. 建立 Agent，綁定工具與系統提示
+    graph = create_agent(
+        model=llm,
+        tools=[execute_sql],           # 可用工具列表
+        system_prompt=build_system_prompt(),  # 動態注入 Schema
+    )
+
+    return graph
+
+# 3. 匯出 graph 供 LangGraph Server 使用
+graph = create_sql_agent()
+```
+
+### Agent 運作流程
+
+```
+使用者輸入
+    ↓
+LLM 分析意圖
+    ↓
+決定是否呼叫工具 → 是 → 呼叫 execute_sql → 取得結果
+    ↓                                           ↓
+    否                                          ↓
+    ↓                                           ↓
+生成最終回應 ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+```
+
+---
+
+## Prompt 設計說明
+
+系統提示 (System Prompt) 是 Agent 行為的核心。我們採用**動態注入**的方式，確保 Agent 總是擁有最新的資料庫結構資訊。
+
+### Prompt 結構
+
+```
+┌─────────────────────────────────────────┐
+│  角色定義                                │
+│  "你是一個專業的 SQL 助手..."            │
+├─────────────────────────────────────────┤
+│  動態注入的資料庫 Schema                 │  ← 從 SQLite 即時讀取
+│  📋 Table: laptops                      │
+│     - id: INTEGER [PK]                  │
+│     - brand: TEXT                       │
+│     ...                                 │
+├─────────────────────────────────────────┤
+│  職責說明                                │
+│  1. 理解用戶需求                         │
+│  2. 生成正確的 SQL                       │
+│  3. 執行查詢                             │
+│  4. 解釋結果                             │
+├─────────────────────────────────────────┤
+│  注意事項                                │
+│  - 使用正確的表名和欄位名                 │
+│  - JOIN 語法使用時機                     │
+└─────────────────────────────────────────┘
+```
+
+### Schema 動態讀取 (`db/schema.py`)
+
+```python
+def get_database_schema() -> dict:
+    """從 SQLite 即時讀取資料表結構"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 取得所有表格名稱
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = cursor.fetchall()
+    
+    # 對每個表格取得欄位資訊
+    for table in tables:
+        cursor.execute(f"PRAGMA table_info({table})")
+        # ... 解析欄位資訊
+```
+
+**優點**：
+- 資料庫結構變更時，不需手動更新 Prompt
+- Agent 永遠基於最新的 Schema 生成 SQL
+
+---
+
+## 工具 (Tool) 設計說明
+
+### 工具定義 (`tools/sql_tool.py`)
+
+使用 LangChain 的 `@tool` 裝飾器來定義工具：
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def execute_sql(raw_sql: str) -> str:
+    """
+    Execute a raw SQL query against the laptop inventory database.
+    
+    Args:
+        raw_sql: The complete SQL query to execute.
+    """
+    # 連接 SQLite 並執行查詢
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(raw_sql)
+    
+    # 格式化輸出結果
+    # ...
+```
+
+### 工具設計原則
+
+| 原則 | 說明 |
+|------|------|
+| **單一職責** | 一個工具只做一件事 (執行 SQL) |
+| **清晰的 Docstring** | LLM 會讀取 docstring 來理解工具用途 |
+| **明確的參數** | `raw_sql: str` 讓 LLM 知道要傳入完整 SQL |
+| **友善的輸出格式** | 使用表格格式與 emoji 增加可讀性 |
+
+### 輸出格式範例
+
+```
+✅ Query executed successfully!
+
+📊 Results (5 rows):
+
+model_name         | serial_number
+-------------------+-----------------
+MacBook Pro 14     | SN-APL-MBP14-001
+MacBook Air M2     | SN-APL-MBA13-002
+...
+```
+
+---
+
+## 測試資料說明
+
+本專案包含三個 CSV 檔案，模擬筆記型電腦零件庫存系統：
+
+### 1. `data/laptops.csv` - 筆記型電腦
+
+| 欄位 | 說明 | 範例 |
+|------|------|------|
+| id | 主鍵 | 1 |
+| brand | 品牌 | Apple |
+| model_name | 型號名稱 | MacBook Pro 14 |
+| serial_number | 序號 | SN-APL-MBP14-001 |
+| manufacture_date | 出廠日期 | 2023-11-01 |
+
+### 2. `data/components.csv` - 零件
+
+| 欄位 | 說明 | 範例 |
+|------|------|------|
+| id | 主鍵 | 1 |
+| name | 零件名稱 | Apple M3 Pro |
+| type | 類型 | CPU / RAM / SSD / GPU |
+| manufacturer | 製造商 | Apple |
+| specs | 規格 | 11-core CPU / 14-core GPU |
+
+### 3. `data/laptop_components.csv` - 安裝關聯
+
+| 欄位 | 說明 |
+|------|------|
+| laptop_id | 對應 laptops.id |
+| component_id | 對應 components.id |
+| installation_date | 安裝日期 |
+
+### 資料關聯圖
+
+```
+┌──────────────┐       ┌───────────────────┐       ┌──────────────┐
+│   laptops    │       │ laptop_components │       │  components  │
+├──────────────┤       ├───────────────────┤       ├──────────────┤
+│ id (PK)      │◄──────│ laptop_id (FK)    │       │ id (PK)      │
+│ brand        │       │ component_id (FK) │──────►│ name         │
+│ model_name   │       │ installation_date │       │ type         │
+│ serial_number│       └───────────────────┘       │ manufacturer │
+│ manufacture_ │                                   │ specs        │
+│ date         │                                   └──────────────┘
+└──────────────┘
+```
+
+### 範例查詢
+
+```sql
+-- 查詢所有 MacBook 及其安裝的 CPU
+SELECT l.model_name, c.name AS cpu_name, c.specs
+FROM laptops l
+JOIN laptop_components lc ON l.id = lc.laptop_id
+JOIN components c ON lc.component_id = c.id
+WHERE l.brand = 'Apple' AND c.type = 'CPU';
+```
+
+---
+
+## 常見問題
+
+### Q: 為什麼連不上 Agent？
+
+確認以下服務都在運行：
+
+| 服務 | 預設埠 | 檢查方式 |
+|------|--------|----------|
+| llama.cpp | 8080 | `curl http://localhost:8080/v1/models` |
+| LangGraph | 2024 | `curl http://localhost:2024/docs` |
+| Chat UI | 3000 | 瀏覽器開啟 `http://localhost:3000` |
+
+### Q: `NEXT_PUBLIC_ASSISTANT_ID` 要填什麼？
+
+這個值必須對應 `langgraph.json` 中 `graphs` 欄位的 **Key**。本專案預設為 `agent`：
+
+```json
+{
+  "graphs": {
+    "agent": "./graph.py:graph"  // ← 這裡的 "agent"
+  }
+}
+```
+
+### Q: 如何新增其他資料表？
+
+1. 在 `data/` 目錄新增 CSV 檔案
+2. 修改 `init_db.py`，在 `csv_files` 字典中加入新表格
+3. 重新執行 `uv run init_db.py`
+4. LangGraph Server 會自動偵測到 Schema 變更
+
+### Q: 如何更換 LLM 模型？
+
+修改 `graph.py` 中的 `ChatOpenAI` 設定：
+
+```python
+llm = ChatOpenAI(
+    base_url="http://localhost:8080/v1",  # 更改 API 位址
+    model="your-model-name",               # 更改模型名稱
+)
+```
+
+---
+
+## 授權
+
+MIT License

@@ -1,0 +1,11 @@
+{
+    "$schema": "https://langchain-ai.github.io/langgraph/langgraph-schema.json",
+    "graphs": {
+        "agent": "./graph.py:graph"
+    },
+    "env": ".env",
+    "python_version": "3.13",
+    "dependencies": [
+        "."
+    ]
+}

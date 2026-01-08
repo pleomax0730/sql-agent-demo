@@ -5,11 +5,16 @@ This module exposes the agent as a LangGraph-compatible graph
 that can be served via `langgraph dev` command.
 """
 
+import os
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from db.schema import get_database_schema, format_schema_for_prompt
 from tools.sql_tool import execute_sql
+
+# SQLite 檔案路徑 (用於持久化對話記錄)
+CHECKPOINT_DB_PATH = os.path.join(os.path.dirname(__file__), "chat_history.db")
 
 
 def build_system_prompt() -> str:
@@ -43,6 +48,10 @@ def build_system_prompt() -> str:
 """
 
 
+# 初始化 SQLite Checkpointer (持久化對話記錄)
+checkpointer = SqliteSaver.from_conn_string(CHECKPOINT_DB_PATH)
+
+
 def create_sql_agent():
     """
     Create and return the SQL agent graph.
@@ -59,6 +68,7 @@ def create_sql_agent():
         model=llm,
         tools=[execute_sql],
         system_prompt=build_system_prompt(),
+        checkpointer=checkpointer,  # 使用 SQLite 持久化
     )
 
     return graph

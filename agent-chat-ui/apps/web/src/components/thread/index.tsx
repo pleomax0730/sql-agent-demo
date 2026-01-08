@@ -204,29 +204,35 @@ export function Thread() {
     (m) => m.type === "ai" || m.type === "tool",
   );
 
+  // 環境變數控制是否隱藏 Thread History
+  const hideThreadHistory = process.env.NEXT_PUBLIC_HIDE_THREAD_HISTORY === "true";
+
   return (
     <div className="flex w-full h-screen overflow-hidden">
-      <div className="relative lg:flex hidden">
-        <motion.div
-          className="absolute h-full border-r bg-white overflow-hidden z-20"
-          style={{ width: 300 }}
-          animate={
-            isLargeScreen
-              ? { x: chatHistoryOpen ? 0 : -300 }
-              : { x: chatHistoryOpen ? 0 : -300 }
-          }
-          initial={{ x: -300 }}
-          transition={
-            isLargeScreen
-              ? { type: "spring", stiffness: 300, damping: 30 }
-              : { duration: 0 }
-          }
-        >
-          <div className="relative h-full" style={{ width: 300 }}>
-            <ThreadHistory />
-          </div>
-        </motion.div>
-      </div>
+      {/* Thread History - 由 NEXT_PUBLIC_HIDE_THREAD_HISTORY 環境變數控制 */}
+      {!hideThreadHistory && (
+        <div className="relative lg:flex hidden">
+          <motion.div
+            className="absolute h-full border-r bg-white overflow-hidden z-20"
+            style={{ width: 300 }}
+            animate={
+              isLargeScreen
+                ? { x: chatHistoryOpen ? 0 : -300 }
+                : { x: chatHistoryOpen ? 0 : -300 }
+            }
+            initial={{ x: -300 }}
+            transition={
+              isLargeScreen
+                ? { type: "spring", stiffness: 300, damping: 30 }
+                : { duration: 0 }
+            }
+          >
+            <div className="relative h-full" style={{ width: 300 }}>
+              <ThreadHistory />
+            </div>
+          </motion.div>
+        </div>
+      )}
       <motion.div
         className={cn(
           "flex-1 flex flex-col min-w-0 overflow-hidden relative",
@@ -250,7 +256,7 @@ export function Thread() {
         {!chatStarted && (
           <div className="absolute top-0 left-0 w-full flex items-center justify-between gap-3 p-2 pl-4 z-10">
             <div>
-              {(!chatHistoryOpen || !isLargeScreen) && (
+              {!hideThreadHistory && (!chatHistoryOpen || !isLargeScreen) && (
                 <Button
                   className="hover:bg-gray-100"
                   variant="ghost"
@@ -272,26 +278,28 @@ export function Thread() {
         {chatStarted && (
           <div className="flex items-center justify-between gap-3 p-2 z-10 relative">
             <div className="flex items-center justify-start gap-2 relative">
-              <div className="absolute left-0 z-10">
-                {(!chatHistoryOpen || !isLargeScreen) && (
-                  <Button
-                    className="hover:bg-gray-100"
-                    variant="ghost"
-                    onClick={() => setChatHistoryOpen((p) => !p)}
-                  >
-                    {chatHistoryOpen ? (
-                      <PanelRightOpen className="size-5" />
-                    ) : (
-                      <PanelRightClose className="size-5" />
-                    )}
-                  </Button>
-                )}
-              </div>
+              {!hideThreadHistory && (
+                <div className="absolute left-0 z-10">
+                  {(!chatHistoryOpen || !isLargeScreen) && (
+                    <Button
+                      className="hover:bg-gray-100"
+                      variant="ghost"
+                      onClick={() => setChatHistoryOpen((p) => !p)}
+                    >
+                      {chatHistoryOpen ? (
+                        <PanelRightOpen className="size-5" />
+                      ) : (
+                        <PanelRightClose className="size-5" />
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
               <motion.button
                 className="flex gap-2 items-center cursor-pointer"
                 onClick={() => setThreadId(null)}
                 animate={{
-                  marginLeft: !chatHistoryOpen ? 48 : 0,
+                  marginLeft: !hideThreadHistory && !chatHistoryOpen ? 48 : 0,
                 }}
                 transition={{
                   type: "spring",

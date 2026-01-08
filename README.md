@@ -32,7 +32,8 @@ sql-agent/
 ├── graph.py              # LangGraph Agent 定義 (主入口)
 ├── langgraph.json        # LangGraph Server 設定檔
 ├── init_db.py            # 資料庫初始化腳本
-├── inventory.db          # SQLite 資料庫檔案
+├── inventory.db          # SQLite 庫存資料庫 (由 init_db.py 建立)
+├── chat_history.db       # SQLite 對話記錄資料庫 (自動建立)
 ├── pyproject.toml        # Python 專案設定 (uv 管理)
 ├── .env                  # 環境變數
 │
@@ -119,14 +120,53 @@ NEXT_PUBLIC_API_URL=http://localhost:2024
 
 # 對應 langgraph.json 中 graphs 欄位定義的 Key
 NEXT_PUBLIC_ASSISTANT_ID=agent
+
+# 隱藏左側 Thread History 側邊欄 (設為 true 隱藏，移除或設為 false 顯示)
+NEXT_PUBLIC_HIDE_THREAD_HISTORY=true
 ```
 
 | 變數 | 必填 | 說明 |
 |------|------|------|
 | `NEXT_PUBLIC_API_URL` | ✅ | LangGraph Server 的 API 位址 |
 | `NEXT_PUBLIC_ASSISTANT_ID` | ✅ | 必須與 `langgraph.json` 中 `graphs` 的 Key 一致 |
+| `NEXT_PUBLIC_HIDE_THREAD_HISTORY` | 否 | 設為 `true` 隱藏左側對話歷史列表 |
 
 > ⚠️ **注意**：`NEXT_PUBLIC_` 開頭的變數會暴露給前端，請勿放置敏感資訊。
+
+---
+
+### 4. 對話記錄持久化 (SQLite)
+
+本專案使用 **SQLite** 來持久化對話記錄，確保伺服器重啟後對話不會遺失。
+
+**相關檔案：**
+- `graph.py` - 使用 `SqliteSaver` 作為 Checkpointer
+- `chat_history.db` - 對話記錄資料庫（自動建立）
+
+**運作原理：**
+```python
+from langgraph.checkpoint.sqlite import SqliteSaver
+
+# 初始化 SQLite Checkpointer
+checkpointer = SqliteSaver.from_conn_string("./chat_history.db")
+
+# 建立 Agent 時傳入 checkpointer
+graph = create_agent(
+    model=llm,
+    tools=[execute_sql],
+    system_prompt=build_system_prompt(),
+    checkpointer=checkpointer,  # 使用 SQLite 持久化
+)
+```
+
+**如何清除對話記錄：**
+```powershell
+# 刪除對話記錄資料庫
+rm chat_history.db
+
+# 重啟 LangGraph Server
+uv run langgraph dev --no-browser
+```
 
 ---
 
@@ -146,6 +186,13 @@ langgraph.json                     agent-chat-ui/apps/web/.env
 │ LangGraph Server    │◄───────────│ NEXT_PUBLIC_API_URL=        │
 │ http://localhost:   │            │   http://localhost:2024     │
 │ 2024                │            └─────────────────────────────┘
+└─────────────────────┘
+         │
+         │ 儲存對話
+         ▼
+┌─────────────────────┐
+│ chat_history.db     │
+│ (SQLite)            │
 └─────────────────────┘
 ```
 
